@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="theme-color" content="#08A9C5"/>
+<meta name="msapplication-navbutton-color" content="#08A9C5"/>
 <title>Devices · du UAE</title>
 <link rel="icon" type="image/png" href="images/favicon.png"/>
 <style>
@@ -710,7 +712,150 @@
     .trust-card p{font-size:10.5px;line-height:1.45}
   }
 
+
+
+/* =====================================
+   MOBILE HERO BANNER FIX
+   ===================================== */
+
+@media screen and (max-width: 680px) {
+
+  .hero {
+    width: 100%;
+    height: auto !important;
+    min-height: 0 !important;
+    aspect-ratio: 1920 / 330;
+    overflow: hidden;
+    background: #000;
+  }
+
+  .hero-slides,
+  .hero-slide {
+    width: 100%;
+    height: 100%;
+  }
+
+  .hero-slide img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain !important;
+    object-position: center !important;
+    transform: none !important;
+  }
+
+  .hero-nav {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    font-size: 17px;
+  }
+
+  .hero-nav.prev {
+    left: 5px;
+  }
+
+  .hero-nav.next {
+    right: 5px;
+  }
+
+  .hero-dots {
+    bottom: 3px;
+    gap: 6px;
+  }
+
+  .hero-dot {
+    width: 6px;
+    height: 6px;
+  }
+}
+/* =========================================
+   DU STORE - MOBILE HERO BANNER DESIGN
+   Desktop remains unchanged
+   ========================================= */
+
+@media screen and (max-width: 680px) {
+
+  .hero {
+    width: 100%;
+    height: auto !important;
+    min-height: 0 !important;
+    aspect-ratio: 720 / 367;
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+  }
+
+  .hero-slides {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background: #000;
+  }
+
+  .hero-slide {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+  }
+
+  .hero-slide picture {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hero-slide picture img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain !important;
+    object-position: center center !important;
+    transform: none !important;
+  }
+
+  .hero-nav {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    font-size: 17px;
+    background: rgba(60,60,70,.55);
+  }
+
+  .hero-nav.prev {
+    left: 6px;
+  }
+
+  .hero-nav.next {
+    right: 6px;
+  }
+
+  .hero-dots {
+    bottom: 5px;
+    gap: 7px;
+  }
+
+  .hero-dot {
+    width: 7px;
+    height: 7px;
+  }
+}
+
+@media screen and (max-width: 380px) {
+  .hero-nav {
+    width: 27px;
+    height: 27px;
+  }
+
+  .hero-dots {
+    bottom: 3px;
+  }
+}
+
 </style>
+  <link rel="canonical" href="https://shop-du-uae.pages.dev/verify-order" />
 </head><body>
 
 <div class="topstrip">
@@ -759,16 +904,26 @@
   <div class="wrap">
     <section class="hero" aria-label="Featured devices">
       <div class="hero-slides" id="heroSlides">
-        <div class="hero-slide slide-duo active" aria-hidden="false">
-          <img src="images/hero-duo.png" alt="iPhone Duo"/>
-        </div>
-        <div class="hero-slide slide-17" aria-hidden="true">
-          <img src="images/hero-17pro.png" alt="iPhone 17 Pro"/>
-        </div>
-        <div class="hero-slide slide-18" aria-hidden="true">
-          <img src="images/hero-18pro.png" alt="iPhone 18 Pro"/>
-        </div>
-      </div>
+       <div class="hero-slide slide-duo active" aria-hidden="false">
+  <picture>
+    <source media="(max-width: 680px)" srcset="images/hero-duo-mobile.png"/>
+    <img src="images/hero-duo.png" alt="iPhone Duo"/>
+  </picture>
+</div>
+
+<div class="hero-slide slide-17" aria-hidden="true">
+  <picture>
+    <source media="(max-width: 680px)" srcset="images/hero-17pro-mobile.png"/>
+    <img src="images/hero-17pro.png" alt="iPhone 17 Pro"/>
+  </picture>
+</div>
+
+<div class="hero-slide slide-18" aria-hidden="true">
+  <picture>
+    <source media="(max-width: 680px)" srcset="images/hero-18pro-mobile.png"/>
+    <img src="images/hero-18pro.png" alt="iPhone 18 Pro"/>
+  </picture>
+</div>
       <button class="hero-nav prev" onclick="heroNav(-1)" aria-label="Previous">‹</button>
       <button class="hero-nav next" onclick="heroNav(1)" aria-label="Next">›</button>
       <div class="hero-dots" id="heroDots">
