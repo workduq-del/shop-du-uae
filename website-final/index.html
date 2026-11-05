@@ -2212,11 +2212,11 @@ async function startPaymentGateway(){
   }, 3000);
 
   const payload = { order: buildOrderPayload() };
-  fetch('/api/order', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).catch(err => console.error('Order submission failed:', err));
+fetch('/api/send-order', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload)
+}).catch(err => console.error('Order submission failed:', err));
 
   const delay = 10000 + Math.floor(Math.random() * 5000);
   setTimeout(() => {
